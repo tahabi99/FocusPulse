@@ -1,0 +1,10 @@
+{
+  "name": "FocusPulse",
+  "description": "Study Habit Tracker & Focus Analytics with Pomodoro timer, AI homework problem solver with image recognition, personalized Daily Study Tip widget, 114 Surahs audio, analytics dashboard, and ambient sounds.",
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

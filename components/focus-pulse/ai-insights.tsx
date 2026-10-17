@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BrainCircuit, CalendarCheck, Flame, Lightbulb, RefreshCw, Sparkles, Target, Zap } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DAILY_GOAL_MINUTES, dateKey, daysAgo, formatHours, useFocusPulse } from './store'
@@ -9,12 +9,23 @@ const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frida
 
 type Insight = { icon: typeof Sparkles; title: string; body: string; tag: string }
 
+const ICON_MAP: Record<string, typeof Sparkles> = {
+  zap: Zap,
+  calendar: CalendarCheck,
+  flame: Flame,
+  target: Target,
+  sparkles: Sparkles,
+  brain: BrainCircuit,
+}
+
 export function AiInsights() {
   const { history, todayMinutes, streak, completionRate, tasks, sessionsToday } = useFocusPulse()
   const [index, setIndex] = useState(0)
   const [thinking, setThinking] = useState(false)
+  const [liveInsights, setLiveInsights] = useState<Insight[] | null>(null)
+  const [isAiPowered, setIsAiPowered] = useState(false)
 
-  const { insights, bestDay, weekAvg } = useMemo(() => {
+  const { fallbackInsights, bestDay, weekAvg, averages } = useMemo(() => {
     const totals = Array(7).fill(0)
     const counts = Array(7).fill(0)
     for (let i = 1; i <= 56; i++) {
@@ -22,35 +33,52 @@ export function AiInsights() {
       totals[date.getDay()] += history[dateKey(date)] ?? 0
       counts[date.getDay()]++
     }
-    const averages = totals.map((t, i) => t / counts[i])
-    const best = averages.indexOf(Math.max(...averages))
-    const worst = averages.indexOf(Math.min(...averages))
+    const avgs = totals.map((t, i) => Math.round(t / counts[i]))
+    const best = avgs.indexOf(Math.max(...avgs))
+    const worst = avgs.indexOf(Math.min(...avgs))
     const lastWeek = Array.from({ length: 7 }, (_, i) => history[dateKey(daysAgo(i + 1))] ?? 0)
     const avg = Math.round(lastWeek.reduce((a, b) => a + b, 0) / 7)
     const openTasks = tasks.filter((t) => !t.done).length
 
     const list: Insight[] = []
-    if (todayMinutes < avg) {
+    if (avg === 0 && todayMinutes === 0) {
+      list.push({
+        icon: Zap,
+        tag: 'Momentum',
+        title: 'Ready to begin your study streak',
+        body: 'Start with a 25-minute Pomodoro focus block today. Short, dedicated sessions build steady academic momentum without burnout.',
+      })
+    } else if (todayMinutes < avg) {
       list.push({
         icon: Zap,
         tag: 'Momentum',
         title: `You're ${formatHours(avg - todayMinutes)} behind your usual pace`,
-        body: `Your 7-day average is ${formatHours(avg)}. Two more 25-minute sessions would put you right back on track — start one now while your streak is warm.`,
+        body: `Your 7-day average is ${formatHours(avg)}. A focused 25-minute session would put you right back on track — start one now while your mind is fresh.`,
       })
     } else {
       list.push({
         icon: Zap,
         tag: 'Momentum',
         title: 'You are ahead of your average today',
-        body: `You've logged ${formatHours(todayMinutes)} versus a ${formatHours(avg)} daily average. Consider a longer break to lock in what you've learned before pushing further.`,
+        body: `You've logged ${formatHours(todayMinutes)} versus a ${formatHours(avg)} daily average. Great dedication today!`,
       })
     }
-    list.push({
-      icon: CalendarCheck,
-      tag: 'Pattern',
-      title: `${WEEKDAYS[best]}s are your power days`,
-      body: `You average ${formatHours(Math.round(averages[best]))} on ${WEEKDAYS[best]}s but only ${formatHours(Math.round(averages[worst]))} on ${WEEKDAYS[worst]}s. Schedule your hardest subjects for ${WEEKDAYS[best]} and lighter review for ${WEEKDAYS[worst]}.`,
-    })
+
+    if (avgs[best] > 0) {
+      list.push({
+        icon: CalendarCheck,
+        tag: 'Pattern',
+        title: `${WEEKDAYS[best]}s are your power days`,
+        body: `You average ${formatHours(avgs[best])} on ${WEEKDAYS[best]}s. Schedule your most challenging topics for ${WEEKDAYS[best]} to maximize retention.`,
+      })
+    } else {
+      list.push({
+        icon: CalendarCheck,
+        tag: 'Pattern',
+        title: 'Discover your optimal study rhythm',
+        body: 'As you complete focus sessions across different weekdays, FocusPulse will reveal your peak concentration days and optimal study times.',
+      })
+    }
     list.push({
       icon: Flame,
       tag: 'Consistency',
@@ -69,18 +97,70 @@ export function AiInsights() {
           ? `You have ${openTasks} open ${openTasks === 1 ? 'task' : 'tasks'}. Pair your next focus session with the smallest one to build quick wins.`
           : 'Every goal is checked off. Add one stretch task for tomorrow to keep the momentum going.',
     })
-    return { insights: list, bestDay: WEEKDAYS[best], weekAvg: avg }
+    return { fallbackInsights: list, bestDay: WEEKDAYS[best], weekAvg: avg, averages: avgs }
   }, [history, todayMinutes, streak, completionRate, tasks])
 
+  const fetchAiInsights = useCallback(async () => {
+    setThinking(true)
+    try {
+      const openTasks = tasks.filter((t) => !t.done).length
+      const res = await fetch('/api/gemini/insights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          todayMinutes,
+          weekAvg,
+          streak,
+          completionRate,
+          openTasks,
+          totalTasks: tasks.length,
+          weekdayAverages: averages,
+          bestDay,
+        }),
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        if (data.insights && Array.isArray(data.insights) && data.insights.length > 0) {
+          const mapped: Insight[] = data.insights.map(
+            (item: { tag: string; title: string; body: string; iconName?: string }) => ({
+              tag: item.tag || 'AI Insight',
+              title: item.title,
+              body: item.body,
+              icon: (item.iconName && ICON_MAP[item.iconName.toLowerCase()]) || Sparkles,
+            })
+          )
+          setLiveInsights(mapped)
+          setIsAiPowered(true)
+          return
+        }
+      }
+    } catch {
+      // Fallback seamlessly to local rule-based heuristics
+    } finally {
+      setThinking(false)
+    }
+  }, [todayMinutes, weekAvg, streak, completionRate, tasks, averages, bestDay])
+
+  useEffect(() => {
+    void fetchAiInsights()
+  }, [fetchAiInsights])
+
+  const insights = liveInsights && liveInsights.length > 0 ? liveInsights : fallbackInsights
   const current = insights[index % insights.length]
   const Icon = current.icon
 
-  const regenerate = () => {
+  const handleNextInsight = () => {
     setThinking(true)
     setTimeout(() => {
       setIndex((i) => i + 1)
       setThinking(false)
-    }, 700)
+    }, 400)
+  }
+
+  const handleRegenerate = async () => {
+    await fetchAiInsights()
+    setIndex((i) => i + 1)
   }
 
   return (
@@ -98,7 +178,14 @@ export function AiInsights() {
                 <BrainCircuit className="size-6 text-white" aria-hidden />
               </span>
               <div>
-                <h2 className="text-sm font-semibold">FocusPulse AI</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-semibold">FocusPulse AI</h2>
+                  {isAiPowered && (
+                    <span className="rounded-full bg-primary/20 px-2 py-0.5 text-[10px] font-medium text-primary">
+                      Gemini Live
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-muted-foreground">Based on your last 8 weeks</p>
               </div>
             </div>
@@ -117,26 +204,39 @@ export function AiInsights() {
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex gap-1.5" aria-hidden>
+            <div className="flex items-center gap-1.5" aria-hidden>
               {insights.map((_, i) => (
-                <span
+                <button
                   key={i}
+                  type="button"
+                  onClick={() => setIndex(i)}
                   className={cn(
                     'h-1.5 rounded-full transition-all',
-                    i === index % insights.length ? 'w-6 bg-primary' : 'w-1.5 bg-muted-foreground/30',
+                    i === index % insights.length ? 'w-6 bg-primary' : 'w-1.5 bg-muted-foreground/30 hover:bg-muted-foreground/60',
                   )}
+                  aria-label={`Go to insight ${i + 1}`}
                 />
               ))}
             </div>
-            <button
-              type="button"
-              onClick={regenerate}
-              disabled={thinking}
-              className="flex items-center gap-2 rounded-xl border bg-background/60 px-4 py-2 text-sm font-medium backdrop-blur transition-all hover:-translate-y-0.5 hover:border-primary/50"
-            >
-              <RefreshCw className={cn('size-4', thinking && 'animate-spin')} aria-hidden />
-              {thinking ? 'Analyzing…' : 'New insight'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleNextInsight}
+                disabled={thinking}
+                className="rounded-xl border bg-background/60 px-3 py-2 text-xs font-medium backdrop-blur transition-all hover:border-primary/50"
+              >
+                Next
+              </button>
+              <button
+                type="button"
+                onClick={handleRegenerate}
+                disabled={thinking}
+                className="flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-medium text-primary-foreground shadow-md transition-all hover:opacity-90 disabled:opacity-50"
+              >
+                <RefreshCw className={cn('size-3.5', thinking && 'animate-spin')} aria-hidden />
+                {thinking ? 'Analyzing…' : 'Regenerate'}
+              </button>
+            </div>
           </div>
         </div>
       </section>

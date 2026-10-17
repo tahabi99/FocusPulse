@@ -205,28 +205,32 @@ function startLofi(ctx: AudioContext, out: AudioNode) {
 }
 
 function startRain(ctx: AudioContext, out: AudioNode) {
+  // Soothing, gentle rainfall calibrated at a comfortable lower sound level:
+  // Warm low-pass filter eliminates harsh hiss while maintaining distinct, relaxing rain presence
   const src = loopSource(ctx, 'pink')
   const lp = ctx.createBiquadFilter()
   lp.type = 'lowpass'
-  lp.frequency.value = 2200
+  lp.frequency.value = 950 // warm, cozy rain frequency
   const hp = ctx.createBiquadFilter()
   hp.type = 'highpass'
-  hp.frequency.value = 350
+  hp.frequency.value = 160
   const g = ctx.createGain()
-  g.gain.value = 0.9
+  g.gain.value = 0.22 // Pleasant, audible yet soft base rainfall
+
   const lfo = ctx.createOscillator()
   const lfoDepth = ctx.createGain()
   lfo.frequency.value = 0.08
-  lfoDepth.gain.value = 600
+  lfoDepth.gain.value = 180
   lfo.connect(lfoDepth).connect(lp.frequency)
   src.connect(hp).connect(lp).connect(g).connect(out)
 
+  // Soft, delicate raindrops for realistic texture
   const drops = loopSource(ctx, 'crackle')
   const dropFilter = ctx.createBiquadFilter()
   dropFilter.type = 'bandpass'
-  dropFilter.frequency.value = 3000
+  dropFilter.frequency.value = 1600
   const dropGain = ctx.createGain()
-  dropGain.gain.value = 0.5
+  dropGain.gain.value = 0.035 // distinct, gentle raindrop patter
   drops.connect(dropFilter).connect(dropGain).connect(out)
 
   src.start()
@@ -254,3 +258,64 @@ export function startSynth(ctx: AudioContext, kind: SynthKind, out: AudioNode) {
   if (kind === 'rain') return startRain(ctx, out)
   return startBrown(ctx, out)
 }
+
+export function startTapeDust(ctx: AudioContext, out: AudioNode, level = 0.02) {
+  const crackle = loopSource(ctx, 'crackle')
+  const g = ctx.createGain()
+  g.gain.value = level
+  const filter = ctx.createBiquadFilter()
+  filter.type = 'lowpass'
+  filter.frequency.value = 2500
+  crackle.connect(filter).connect(g).connect(out)
+  crackle.start()
+  return () => {
+    crackle.stop(ctx.currentTime + 0.3)
+  }
+}
+
+export function createLofiVoiceChain(
+  ctx: AudioContext,
+  sourceNode: AudioNode,
+  destNode: AudioNode,
+  options: { warmth?: boolean; tapeRollOff?: boolean } = { warmth: true, tapeRollOff: true }
+) {
+  const lp = ctx.createBiquadFilter()
+  lp.type = 'lowpass'
+  lp.frequency.value = options.tapeRollOff ? 3600 : 8000
+  lp.Q.value = 0.85
+
+  const peak = ctx.createBiquadFilter()
+  peak.type = 'peaking'
+  peak.frequency.value = 260
+  peak.gain.value = options.warmth ? 3.5 : 0
+  peak.Q.value = 0.9
+
+  const hs = ctx.createBiquadFilter()
+  hs.type = 'highshelf'
+  hs.frequency.value = 5200
+  hs.gain.value = options.tapeRollOff ? -6 : 0
+
+  sourceNode.connect(peak)
+  peak.connect(lp)
+  lp.connect(hs)
+  hs.connect(destNode)
+
+  return {
+    setWarmth: (w: boolean) => {
+      peak.gain.setTargetAtTime(w ? 3.5 : 0, ctx.currentTime, 0.05)
+    },
+    setTapeRollOff: (r: boolean) => {
+      lp.frequency.setTargetAtTime(r ? 3600 : 8000, ctx.currentTime, 0.05)
+      hs.gain.setTargetAtTime(r ? -6 : 0, ctx.currentTime, 0.05)
+    },
+    disconnect: () => {
+      try {
+        sourceNode.disconnect()
+        peak.disconnect()
+        lp.disconnect()
+        hs.disconnect()
+      } catch {}
+    },
+  }
+}
+

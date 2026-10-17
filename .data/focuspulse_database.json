@@ -1,0 +1,38 @@
+{
+  "test_user_1792162370608": {
+    "sessions": [
+      {
+        "id": "sess_reset_test_1792162371656",
+        "userId": "test_user_1792162370608",
+        "mode": "focus",
+        "targetDurationSeconds": 1500,
+        "actualDurationSeconds": 300,
+        "startedAt": "2026-10-16T14:47:51.656Z",
+        "completedAt": "2026-10-16T14:52:51.656Z",
+        "status": "completed",
+        "dateKey": "2026-10-16"
+      }
+    ],
+    "activeTimer": {
+      "userId": "test_user_1792162370608",
+      "mode": "focus",
+      "focusMin": 25,
+      "breakMin": 5,
+      "targetSeconds": 1500,
+      "sessionStartTime": 1792162070608,
+      "segmentStartTime": 1792162370608,
+      "accumulatedElapsed": 300,
+      "running": true,
+      "lastUpdated": 1792162370608
+    },
+    "tasks": [],
+    "updatedAt": 1792162371669
+  },
+  "test_student": {
+    "sessions": [],
+    "activeTimer": null,
+    "tasks": [],
+    "distractions": [],
+    "updatedAt": 1792165817394
+  }
+}

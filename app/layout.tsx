@@ -1,4 +1,3 @@
-import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
@@ -9,7 +8,7 @@ const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono'
 export const metadata: Metadata = {
   title: 'FocusPulse — Study Habit Tracker & Focus Analytics',
   description:
-    'Track study habits with a Pomodoro focus timer, analytics dashboard, contribution heatmap, daily goals, and smart insights.',
+    'Study Habit Tracker & Focus Analytics with Pomodoro timer, AI homework problem solver with image recognition, personalized Daily Study Tip widget, 114 Surahs audio, analytics dashboard, and ambient sounds.',
   generator: 'v0.app',
   icons: {
     icon: [
@@ -38,7 +37,6 @@ export default function RootLayout({
     <html lang="en" className={`dark ${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
       <body className="font-sans antialiased">
         {children}
-        {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
   )
